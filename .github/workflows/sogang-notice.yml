@@ -1,0 +1,37 @@
+name: Sogang graduate notice bot
+
+on:
+  schedule:
+    # GitHub cron uses UTC. 01:00/08:00 UTC = 10:00/17:00 KST.
+    - cron: "0 1,8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-notices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Sogang notices
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python sogang_notice_bot.py
+
+      - name: Commit updated notice state
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update Sogang notice state"
+          file_pattern: state/seen_notices.json
