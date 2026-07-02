@@ -30,6 +30,15 @@ DISCORD_WEBHOOK_URL=디스코드_웹훅_URL
 5. `Actions` 탭에서 워크플로를 활성화합니다.
 6. 필요하면 `Sogang graduate notice bot` 워크플로를 `Run workflow`로 수동 실행해 초기 상태를 만듭니다.
 
+새 GitHub 저장소를 만든 뒤 이 로컬 저장소를 올릴 때는:
+
+```bash
+git remote add origin https://github.com/OWNER/REPOSITORY.git
+git push -u origin main
+```
+
+Actions가 `state/seen_notices.json`을 자동 커밋해야 하므로, 저장소 설정에서 `Settings` > `Actions` > `General` > `Workflow permissions`가 `Read and write permissions`인지 확인하세요.
+
 GitHub cron은 UTC 기준이라 워크플로에는 `0 1,8 * * *`로 설정되어 있습니다. 이는 한국시간 10:00, 17:00입니다. GitHub 스케줄 실행은 몇 분 지연될 수 있습니다.
 
 ## 로컬 실행
