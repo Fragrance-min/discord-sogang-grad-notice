@@ -20,17 +20,36 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Run tests
         run: python -m unittest
+
+      - name: Validate Discord webhook secret
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::error title=Missing DISCORD_WEBHOOK_URL::Add a repository secret named DISCORD_WEBHOOK_URL in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          case "$DISCORD_WEBHOOK_URL" in
+            https://discord.com/api/webhooks/*|https://discordapp.com/api/webhooks/*)
+              echo "Discord webhook secret is configured."
+              ;;
+            *)
+              echo "::error title=Invalid DISCORD_WEBHOOK_URL::The secret should be a Discord webhook URL. It was not printed for safety."
+              exit 1
+              ;;
+          esac
 
       - name: Check Sogang notices
         env:
