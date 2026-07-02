@@ -8,9 +8,11 @@ import html
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -25,6 +27,7 @@ BASE_URL = "https://gradsch.sogang.ac.kr"
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_STATE_PATH = Path("state/seen_notices.json")
 MAX_DISCORD_EMBEDS = 10
+DISCORD_USER_AGENT = "DiscordBot (https://github.com/Fragrance-min/discord-sogang-grad-notice, 1.0)"
 
 BOARDS = [
     {
@@ -263,10 +266,18 @@ def post_discord(webhook_url: str, payload: dict[str, Any], dry_run: bool = Fals
         return
 
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    post_discord_with_urllib(webhook_url, data)
+
+
+def post_discord_with_urllib(webhook_url: str, data: bytes) -> None:
     request = Request(
         webhook_url,
         data=data,
-        headers={"Content-Type": "application/json; charset=utf-8"},
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+            "User-Agent": DISCORD_USER_AGENT,
+        },
         method="POST",
     )
     try:
@@ -278,6 +289,14 @@ def post_discord(webhook_url: str, payload: dict[str, Any], dry_run: bool = Fals
                 )
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        if should_retry_discord_with_curl(exc.code, body):
+            print(
+                "Discord webhook returned Cloudflare 1010 via urllib; retrying once with curl.",
+                file=sys.stderr,
+            )
+            post_discord_with_curl(webhook_url, data)
+            return
+
         hint = discord_error_hint(exc.code)
         detail = f" Response: {truncate(body, 500)}" if body else ""
         raise RuntimeError(
@@ -285,6 +304,67 @@ def post_discord(webhook_url: str, payload: dict[str, Any], dry_run: bool = Fals
         ) from exc
     except URLError as exc:
         raise RuntimeError(f"Discord webhook request failed: {exc}") from exc
+
+
+def should_retry_discord_with_curl(status_code: int, response_body: str) -> bool:
+    return status_code == 403 and "1010" in response_body and shutil.which("curl") is not None
+
+
+def post_discord_with_curl(webhook_url: str, data: bytes) -> None:
+    curl_path = shutil.which("curl")
+    if not curl_path:
+        raise RuntimeError("Discord webhook urllib request hit Cloudflare 1010, and curl is not available.")
+
+    result = subprocess.run(
+        [
+            curl_path,
+            "--silent",
+            "--show-error",
+            "--location",
+            "--max-time",
+            "20",
+            "--retry",
+            "2",
+            "--retry-delay",
+            "2",
+            "--retry-all-errors",
+            "--request",
+            "POST",
+            "--header",
+            "Content-Type: application/json; charset=utf-8",
+            "--header",
+            "Accept: application/json",
+            "--header",
+            f"User-Agent: {DISCORD_USER_AGENT}",
+            "--data-binary",
+            "@-",
+            "--write-out",
+            "\n%{http_code}",
+            webhook_url,
+        ],
+        input=data,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    stdout = result.stdout.decode("utf-8", errors="replace")
+    stderr = result.stderr.decode("utf-8", errors="replace").strip()
+
+    if result.returncode != 0:
+        detail = f" {truncate(stderr, 500)}" if stderr else ""
+        raise RuntimeError(f"Discord webhook curl retry failed with exit code {result.returncode}.{detail}")
+
+    body, separator, status_text = stdout.rpartition("\n")
+    if not separator or not status_text.isdigit():
+        raise RuntimeError(f"Discord webhook curl retry returned an unreadable response: {truncate(stdout, 500)}")
+
+    status_code = int(status_text)
+    if 200 <= status_code < 300:
+        return
+
+    hint = discord_error_hint(status_code)
+    detail = f" Response: {truncate(body, 500)}" if body else ""
+    raise RuntimeError(f"Discord webhook curl retry failed with HTTP {status_code}. {hint}{detail}")
 
 
 def board_color(board_id: str) -> int:

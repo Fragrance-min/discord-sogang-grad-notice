@@ -2,7 +2,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sogang_notice_bot import BOARDS, find_new_notices, load_state, parse_notice_list, save_state
+from unittest import mock
+
+from sogang_notice_bot import (
+    BOARDS,
+    find_new_notices,
+    load_state,
+    parse_notice_list,
+    save_state,
+    should_retry_discord_with_curl,
+)
 
 
 SAMPLE_HTML = """
@@ -62,6 +71,16 @@ class SogangNoticeBotTests(unittest.TestCase):
             self.assertTrue(save_state(path, notices, state))
             next_state = load_state(path)
             self.assertEqual(find_new_notices(notices, next_state), [])
+
+    def test_discord_cloudflare_1010_retries_only_when_curl_is_available(self):
+        with mock.patch("sogang_notice_bot.shutil.which", return_value="/usr/bin/curl"):
+            self.assertTrue(should_retry_discord_with_curl(403, "error code: 1010"))
+
+        with mock.patch("sogang_notice_bot.shutil.which", return_value=None):
+            self.assertFalse(should_retry_discord_with_curl(403, "error code: 1010"))
+
+        with mock.patch("sogang_notice_bot.shutil.which", return_value="/usr/bin/curl"):
+            self.assertFalse(should_retry_discord_with_curl(404, "error code: 1010"))
 
 
 if __name__ == "__main__":
