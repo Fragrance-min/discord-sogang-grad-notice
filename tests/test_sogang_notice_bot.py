@@ -1,14 +1,18 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from unittest import mock
 
 from sogang_notice_bot import (
     BOARDS,
+    already_reported_slot,
     find_new_notices,
     load_state,
     parse_notice_list,
+    report_slot_for_time,
     save_state,
     should_retry_discord_with_curl,
 )
@@ -71,6 +75,31 @@ class SogangNoticeBotTests(unittest.TestCase):
             self.assertTrue(save_state(path, notices, state))
             next_state = load_state(path)
             self.assertEqual(find_new_notices(notices, next_state), [])
+
+    def test_state_records_reported_slot(self):
+        notices = parse_notice_list(BOARDS[0], SAMPLE_HTML)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "seen_notices.json"
+            state = load_state(path)
+
+            self.assertTrue(save_state(path, notices, state, reported_slot="2026-07-02-17"))
+            next_state = load_state(path)
+            self.assertTrue(already_reported_slot(next_state, "2026-07-02-17"))
+            self.assertFalse(save_state(path, notices, next_state, reported_slot="2026-07-02-17"))
+
+    def test_report_slot_for_target_and_delayed_times(self):
+        kst = ZoneInfo("Asia/Seoul")
+
+        self.assertEqual(
+            report_slot_for_time(datetime(2026, 7, 2, 17, 15, tzinfo=kst)),
+            "2026-07-02-17",
+        )
+        self.assertEqual(
+            report_slot_for_time(datetime(2026, 7, 2, 18, 20, tzinfo=kst)),
+            "2026-07-02-17",
+        )
+        self.assertIsNone(report_slot_for_time(datetime(2026, 7, 2, 16, 59, tzinfo=kst)))
 
     def test_discord_cloudflare_1010_retries_only_when_curl_is_available(self):
         with mock.patch("sogang_notice_bot.shutil.which", return_value="/usr/bin/curl"):

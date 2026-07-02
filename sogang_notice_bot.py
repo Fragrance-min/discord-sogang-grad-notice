@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -28,6 +28,8 @@ KST = ZoneInfo("Asia/Seoul")
 DEFAULT_STATE_PATH = Path("state/seen_notices.json")
 MAX_DISCORD_EMBEDS = 10
 DISCORD_USER_AGENT = "DiscordBot (https://github.com/Fragrance-min/discord-sogang-grad-notice, 1.0)"
+TARGET_REPORT_HOURS_KST = (10, 17)
+SCHEDULE_DELAY_GRACE_MINUTES = 59
 
 BOARDS = [
     {
@@ -208,17 +210,26 @@ def extract_pkid(url: str) -> str:
 
 def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {"seen": {}}
+        return {"seen": {}, "reported_slots": {}}
     with path.open("r", encoding="utf-8") as file:
         state = json.load(file)
     if "seen" not in state or not isinstance(state["seen"], dict):
         raise ValueError(f"Invalid state file: {path}")
+    if "reported_slots" in state and not isinstance(state["reported_slots"], dict):
+        raise ValueError(f"Invalid reported_slots in state file: {path}")
+    state.setdefault("reported_slots", {})
     return state
 
 
-def save_state(path: Path, notices: list[Notice], previous_state: dict[str, Any]) -> bool:
+def save_state(
+    path: Path,
+    notices: list[Notice],
+    previous_state: dict[str, Any],
+    reported_slot: str | None = None,
+) -> bool:
     now = datetime.now(KST).isoformat(timespec="seconds")
     seen = dict(previous_state.get("seen", {}))
+    reported_slots = dict(previous_state.get("reported_slots", {}))
     changed = False
 
     for notice in notices:
@@ -233,12 +244,17 @@ def save_state(path: Path, notices: list[Notice], previous_state: dict[str, Any]
             }
             changed = True
 
+    if reported_slot and reported_slots.get(reported_slot) != now:
+        reported_slots[reported_slot] = now
+        changed = True
+
     if not changed and path.exists():
         return False
 
     path.parent.mkdir(parents=True, exist_ok=True)
     next_state = {
         "generated_by": "sogang_notice_bot.py",
+        "reported_slots": dict(sorted(reported_slots.items())),
         "seen": dict(sorted(seen.items())),
     }
     with path.open("w", encoding="utf-8") as file:
@@ -455,6 +471,23 @@ def truthy_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def report_slot_for_time(now: datetime) -> str | None:
+    local_now = now.astimezone(KST)
+    slot_time = local_now
+
+    if local_now.hour not in TARGET_REPORT_HOURS_KST:
+        previous_hour = (local_now.hour - 1) % 24
+        if previous_hour not in TARGET_REPORT_HOURS_KST or local_now.minute > SCHEDULE_DELAY_GRACE_MINUTES:
+            return None
+        slot_time = local_now - timedelta(hours=1)
+
+    return f"{slot_time.date().isoformat()}-{slot_time.hour:02d}"
+
+
+def already_reported_slot(state: dict[str, Any], report_slot: str | None) -> bool:
+    return bool(report_slot and report_slot in state.get("reported_slots", {}))
+
+
 def run(args: argparse.Namespace) -> int:
     state_path = Path(args.state)
     webhook_url = args.webhook_url or os.getenv("DISCORD_WEBHOOK_URL", "")
@@ -465,6 +498,15 @@ def run(args: argparse.Namespace) -> int:
 
     state_existed = state_path.exists()
     state = load_state(state_path)
+    scheduled_run = args.scheduled_run or truthy_env("SOGANG_NOTICE_SCHEDULED_RUN")
+    report_slot = report_slot_for_time(datetime.now(KST)) if scheduled_run else None
+    if scheduled_run and not report_slot:
+        print("Scheduled run is outside the target KST report windows; exiting without Discord notification.")
+        return 0
+    if scheduled_run and already_reported_slot(state, report_slot):
+        print(f"Already reported for slot {report_slot}; exiting without duplicate Discord notification.")
+        return 0
+
     notices = collect_notices()
     new_notices = find_new_notices(notices, state)
 
@@ -472,16 +514,18 @@ def run(args: argparse.Namespace) -> int:
     if not state_existed and not send_all_on_first_run:
         send_first_run_message(webhook_url, len(notices), dry_run=dry_run)
         if not dry_run:
-            save_state(state_path, notices, state)
+            save_state(state_path, notices, state, reported_slot=report_slot)
         return 0
 
     if new_notices:
         send_new_notice_messages(webhook_url, new_notices, dry_run=dry_run)
         if not dry_run:
-            save_state(state_path, notices, state)
+            save_state(state_path, notices, state, reported_slot=report_slot)
         return 0
 
     send_no_new_message(webhook_url, len(notices), dry_run=dry_run)
+    if not dry_run:
+        save_state(state_path, notices, state, reported_slot=report_slot)
     return 0
 
 
@@ -490,6 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--state", default=str(DEFAULT_STATE_PATH), help="Path to the JSON state file.")
     parser.add_argument("--webhook-url", help="Discord webhook URL. Defaults to DISCORD_WEBHOOK_URL.")
     parser.add_argument("--dry-run", action="store_true", help="Print Discord payloads instead of sending.")
+    parser.add_argument("--scheduled-run", action="store_true", help="Deduplicate repeated scheduled attempts.")
     parser.add_argument(
         "--send-all-on-first-run",
         action="store_true",
