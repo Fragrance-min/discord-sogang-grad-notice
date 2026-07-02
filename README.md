@@ -7,7 +7,7 @@
 
 ## 동작 방식
 
-GitHub Actions가 한국시간 기준 매일 10:00, 17:00에 실행됩니다.
+GitHub Actions가 한국시간 기준 매일 10:10, 17:10에 실행됩니다.
 
 - 새 공지가 있으면 게시판명, 작성일, 제목, 상세 링크를 Discord로 보냅니다.
 - 새 공지가 없으면 "새 공지는 없습니다" 메시지를 Discord로 보냅니다.
@@ -39,7 +39,7 @@ git push -u origin main
 
 Actions가 `state/seen_notices.json`을 자동 커밋해야 하므로, 저장소 설정에서 `Settings` > `Actions` > `General` > `Workflow permissions`가 `Read and write permissions`인지 확인하세요.
 
-GitHub cron은 UTC 기준이라 워크플로에는 `0 1,8 * * *`로 설정되어 있습니다. 이는 한국시간 10:00, 17:00입니다. GitHub 스케줄 실행은 몇 분 지연될 수 있습니다.
+GitHub cron은 UTC 기준이라 워크플로에는 `10 1,8 * * *`로 설정되어 있습니다. 이는 한국시간 10:10, 17:10입니다. GitHub 스케줄 실행은 몇 분 지연될 수 있고, 매시 정각에는 지연/드롭 가능성이 더 커서 10분으로 맞춰두었습니다.
 
 ## 로컬 실행
 

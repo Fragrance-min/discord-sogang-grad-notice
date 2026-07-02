@@ -2,8 +2,9 @@ name: Sogang graduate notice bot
 
 on:
   schedule:
-    # GitHub cron uses UTC. 01:00/08:00 UTC = 10:00/17:00 KST.
-    - cron: "0 1,8 * * *"
+    # GitHub cron uses UTC. 01:10/08:10 UTC = 10:10/17:10 KST.
+    # Avoid minute 0 because GitHub can delay or drop jobs at the start of an hour.
+    - cron: "10 1,8 * * *"
   workflow_dispatch:
 
 permissions:
