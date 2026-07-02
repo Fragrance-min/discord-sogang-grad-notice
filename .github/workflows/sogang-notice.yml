@@ -32,6 +32,9 @@ jobs:
       - name: Run tests
         run: python -m unittest
 
+      - name: Preflight Sogang notice fetch
+        run: python sogang_notice_bot.py --dry-run
+
       - name: Validate Discord webhook secret
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

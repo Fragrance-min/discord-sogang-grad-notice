@@ -269,10 +269,22 @@ def post_discord(webhook_url: str, payload: dict[str, Any], dry_run: bool = Fals
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",
     )
-    with urlopen(request, timeout=20) as response:
-        if response.status >= 300:
-            body = response.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Discord webhook failed with HTTP {response.status}: {body}")
+    try:
+        with urlopen(request, timeout=20) as response:
+            if response.status >= 300:
+                body = response.read().decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    f"Discord webhook failed with HTTP {response.status}: {truncate(body, 500)}"
+                )
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        hint = discord_error_hint(exc.code)
+        detail = f" Response: {truncate(body, 500)}" if body else ""
+        raise RuntimeError(
+            f"Discord webhook failed with HTTP {exc.code} {exc.reason}. {hint}{detail}"
+        ) from exc
+    except URLError as exc:
+        raise RuntimeError(f"Discord webhook request failed: {exc}") from exc
 
 
 def board_color(board_id: str) -> int:
@@ -339,6 +351,23 @@ def truncate(value: str, limit: int) -> str:
     return value[: limit - 1].rstrip() + "…"
 
 
+def discord_error_hint(status_code: int) -> str:
+    if status_code in {401, 403, 404}:
+        return (
+            "Check that DISCORD_WEBHOOK_URL is the full webhook URL from Discord "
+            "and that the webhook was not deleted."
+        )
+    if status_code == 429:
+        return "Discord rate-limited the webhook request. Retry the workflow later."
+    if 400 <= status_code < 500:
+        return "Discord rejected the webhook payload or URL."
+    return "Discord returned a server error. Retry the workflow later."
+
+
+def github_actions_escape(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
 def truthy_env(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -396,6 +425,11 @@ def main(argv: list[str] | None = None) -> int:
         return run(args)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
+        if os.getenv("GITHUB_ACTIONS"):
+            print(
+                f"::error title=Sogang notice bot failed::{github_actions_escape(str(exc))}",
+                file=sys.stderr,
+            )
         return 1
 
 
