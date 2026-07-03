@@ -28,7 +28,7 @@ DISCORD_WEBHOOK_URL=디스코드_웹훅_URL
 
 초기화 실행은 현재 목록을 기준선으로 저장하고, 다음 실행부터 새 공지만 알립니다.
 
-## 기본 10시, 17시 트리거 설치
+## 원하는 시간에 트리거 설치
 
 함수 선택 드롭다운에서 `installProductionTriggers`를 선택하고 한 번 실행합니다.
 
@@ -37,6 +37,20 @@ DISCORD_WEBHOOK_URL=디스코드_웹훅_URL
 설치 후 왼쪽 시계 아이콘 `Triggers`에서 `runSogangNoticeBot` 트리거 2개가 보이면 됩니다.
 
 직접 트리거 시간을 추가하거나 바꾸면, `runSogangNoticeBot`은 그 트리거가 실행된 시간마다 Discord로 결과를 보냅니다. 같은 한국시간 날짜-시간대 안에서 중복 실행된 경우에만 한 번 더 보내지 않습니다.
+
+원하는 기본 시간을 코드로 바꾸고 싶다면 `Code.gs` 맨 위의 값을 수정한 뒤 `installProductionTriggers`를 다시 실행합니다.
+
+```js
+const DEFAULT_TRIGGER_HOURS_KST = [10, 17];
+```
+
+예를 들어 9시, 13시, 18시에 받고 싶으면:
+
+```js
+const DEFAULT_TRIGGER_HOURS_KST = [9, 13, 18];
+```
+
+토요일과 일요일에는 트리거가 실행되어도 Discord 알림을 보내지 않습니다. 수동 테스트 함수 `runSogangNoticeBotManual`은 주말 제한을 무시하고 바로 전송합니다.
 
 ## 수동 실행과 초기화
 

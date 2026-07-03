@@ -105,6 +105,11 @@ function runSogangNoticeBot_(options) {
     const state = readState_(properties);
     const reportSlot = force ? null : reportSlotForDate_(now);
 
+    if (!force && isWeekendKst_(now)) {
+      console.log("Weekend in " + TIME_ZONE + "; skipping Discord notification.");
+      return;
+    }
+
     if (!force && state.reportedSlots[reportSlot]) {
       console.log("Already reported for slot " + reportSlot + "; skipping duplicate notification.");
       return;
@@ -442,6 +447,13 @@ function pruneProperties_(properties, prefix, keepMax) {
 
 function reportSlotForDate_(date) {
   return Utilities.formatDate(date, TIME_ZONE, "yyyy-MM-dd-HH");
+}
+
+function isWeekendKst_(date) {
+  const ymd = Utilities.formatDate(date, TIME_ZONE, "yyyy-MM-dd");
+  const kstNoon = new Date(ymd + "T12:00:00+09:00");
+  const day = kstNoon.getUTCDay();
+  return day === 0 || day === 6;
 }
 
 function sendNewNoticeMessages_(webhookUrl, notices) {
