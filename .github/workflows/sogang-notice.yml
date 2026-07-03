@@ -1,9 +1,6 @@
 name: Sogang graduate notice bot
 
 on:
-  schedule:
-    # GitHub cron uses UTC. 08:45 UTC = 17:45 KST.
-    - cron: "45 8 * * *"
   workflow_dispatch:
 
 permissions:

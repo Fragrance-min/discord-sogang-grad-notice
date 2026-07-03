@@ -7,16 +7,16 @@
 
 ## 동작 방식
 
-현재 GitHub Actions 스케줄은 테스트를 위해 한국시간 기준 매일 17:45에 실행되도록 설정되어 있습니다.
+현재 GitHub Actions 자동 스케줄은 꺼져 있습니다. GitHub 저장소는 코드 보관과 수동 테스트용으로 두고, 실제 운영은 `apps-script/`의 Google Apps Script 버전으로 실행합니다.
 
 - 새 공지가 있으면 게시판명, 작성일, 제목, 상세 링크를 Discord로 보냅니다.
 - 새 공지가 없으면 "새 공지는 없습니다" 메시지를 Discord로 보냅니다.
-- UTC 기준으로 `08:45`에 실행되며, 이는 한국시간 `17:45`입니다.
-- 봇에는 시간대별 중복 알림 방지 로직이 들어 있어, 나중에 여러 번 시도하는 스케줄로 되돌려도 같은 시간대에 한 번만 Discord로 말합니다.
+- Apps Script 운영 버전은 한국시간 기준 매일 10:00 근처와 17:00 근처에 확인합니다.
+- 봇에는 시간대별 중복 알림 방지 로직이 들어 있어, 같은 시간대에 여러 번 실행되어도 한 번만 Discord로 말합니다.
 - 첫 실행에서는 기존 공지를 새 공지로 쏟아내지 않고, 현재 목록을 기준선으로 저장합니다.
 - 이후 실행부터 이전에 보지 못한 `pkid`를 새 공지로 판단합니다.
 
-상태 파일은 `state/seen_notices.json`에 저장되고, 워크플로가 변경분을 자동 커밋합니다. 이 파일에는 확인한 공지와 이미 보고한 시간대가 함께 저장됩니다.
+Python/GitHub Actions 버전의 상태 파일은 `state/seen_notices.json`에 저장됩니다. Apps Script 버전은 Google Apps Script의 Script Properties에 상태를 저장합니다.
 
 ## GitHub 설정
 
@@ -29,8 +29,7 @@ DISCORD_WEBHOOK_URL=디스코드_웹훅_URL
 ```
 
 4. 저장소에 이 파일들을 push합니다.
-5. `Actions` 탭에서 워크플로를 활성화합니다.
-6. 필요하면 `Sogang graduate notice bot` 워크플로를 `Run workflow`로 수동 실행해 초기 상태를 만듭니다.
+5. 필요하면 `Actions` 탭에서 `Sogang graduate notice bot` 워크플로를 `Run workflow`로 수동 실행합니다.
 
 새 GitHub 저장소를 만든 뒤 이 로컬 저장소를 올릴 때는:
 
@@ -39,9 +38,22 @@ git remote add origin https://github.com/OWNER/REPOSITORY.git
 git push -u origin main
 ```
 
-Actions가 `state/seen_notices.json`을 자동 커밋해야 하므로, 저장소 설정에서 `Settings` > `Actions` > `General` > `Workflow permissions`가 `Read and write permissions`인지 확인하세요.
+Actions를 수동 실행할 때 `state/seen_notices.json`을 자동 커밋하려면, 저장소 설정에서 `Settings` > `Actions` > `General` > `Workflow permissions`가 `Read and write permissions`인지 확인하세요.
 
-GitHub cron은 UTC 기준이라 워크플로에는 `45 8 * * *`로 설정되어 있습니다. 이는 한국시간 17:45입니다. GitHub 스케줄 실행은 몇 분 지연될 수 있습니다.
+현재 워크플로에는 `schedule` 트리거가 없고 `workflow_dispatch`만 남아 있어 자동으로 돌지 않습니다.
+
+## Google Apps Script 운영
+
+실제 매일 알림 운영은 `apps-script/` 폴더를 사용합니다.
+
+1. https://script.google.com 에서 새 Apps Script 프로젝트를 만듭니다.
+2. `apps-script/Code.gs`와 `apps-script/appsscript.json` 내용을 업로드합니다.
+3. Script Properties에 `DISCORD_WEBHOOK_URL`을 추가합니다.
+4. `verifySetup`을 실행해 권한을 승인하고 설정을 확인합니다.
+5. `runSogangNoticeBotManual`을 한 번 실행해 초기화 메시지를 받습니다.
+6. `installProductionTriggers`를 한 번 실행해 한국시간 10시, 17시 트리거를 만듭니다.
+
+자세한 순서는 `apps-script/README.md`에 정리되어 있습니다.
 
 ## 로컬 실행
 
