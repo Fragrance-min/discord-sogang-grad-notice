@@ -8,9 +8,7 @@ const REPORTED_PREFIX = "reported.";
 const MAX_DISCORD_EMBEDS = 10;
 const MAX_SEEN_PROPERTIES = 500;
 const MAX_REPORTED_PROPERTIES = 120;
-const TARGET_REPORT_HOURS_KST = [10, 17];
-const EARLY_TRIGGER_GRACE_MINUTES = 15;
-const DELAYED_TRIGGER_GRACE_MINUTES = 59;
+const DEFAULT_TRIGGER_HOURS_KST = [10, 17];
 const DISCORD_USER_AGENT =
   "DiscordBot (https://github.com/Fragrance-min/discord-sogang-grad-notice, 1.0)";
 
@@ -40,7 +38,7 @@ function runSogangNoticeBotManual() {
 function installProductionTriggers() {
   deleteBotTriggers();
 
-  TARGET_REPORT_HOURS_KST.forEach(function (hour) {
+  DEFAULT_TRIGGER_HOURS_KST.forEach(function (hour) {
     ScriptApp.newTrigger(BOT_TRIGGER_FUNCTION)
       .timeBased()
       .atHour(hour)
@@ -50,8 +48,11 @@ function installProductionTriggers() {
       .create();
   });
 
+  const triggerHoursText = DEFAULT_TRIGGER_HOURS_KST.map(function (hour) {
+    return hour + ":00";
+  }).join(" and ");
   const message =
-    "Installed Sogang notice triggers near 10:00 and 17:00 " + TIME_ZONE + ".";
+    "Installed Sogang notice triggers near " + triggerHoursText + " " + TIME_ZONE + ".";
   console.log(message);
   return message;
 }
@@ -103,11 +104,6 @@ function runSogangNoticeBot_(options) {
     const webhookUrl = getWebhookUrl_(properties);
     const state = readState_(properties);
     const reportSlot = force ? null : reportSlotForDate_(now);
-
-    if (!force && !reportSlot) {
-      console.log("Outside the target KST report windows; skipping Discord notification.");
-      return;
-    }
 
     if (!force && state.reportedSlots[reportSlot]) {
       console.log("Already reported for slot " + reportSlot + "; skipping duplicate notification.");
@@ -445,36 +441,7 @@ function pruneProperties_(properties, prefix, keepMax) {
 }
 
 function reportSlotForDate_(date) {
-  const hour = Number(Utilities.formatDate(date, TIME_ZONE, "H"));
-  const minute = Number(Utilities.formatDate(date, TIME_ZONE, "m"));
-
-  if (TARGET_REPORT_HOURS_KST.indexOf(hour) !== -1) {
-    return Utilities.formatDate(date, TIME_ZONE, "yyyy-MM-dd") + "-" + pad2_(hour);
-  }
-
-  const nextHour = (hour + 1) % 24;
-  if (
-    TARGET_REPORT_HOURS_KST.indexOf(nextHour) !== -1 &&
-    minute >= 60 - EARLY_TRIGGER_GRACE_MINUTES
-  ) {
-    const nextDate = new Date(date.getTime() + 60 * 60 * 1000);
-    return Utilities.formatDate(nextDate, TIME_ZONE, "yyyy-MM-dd") + "-" + pad2_(nextHour);
-  }
-
-  const previousHour = (hour + 23) % 24;
-  if (
-    TARGET_REPORT_HOURS_KST.indexOf(previousHour) !== -1 &&
-    minute <= DELAYED_TRIGGER_GRACE_MINUTES
-  ) {
-    const previousDate = new Date(date.getTime() - 60 * 60 * 1000);
-    return (
-      Utilities.formatDate(previousDate, TIME_ZONE, "yyyy-MM-dd") +
-      "-" +
-      pad2_(previousHour)
-    );
-  }
-
-  return null;
+  return Utilities.formatDate(date, TIME_ZONE, "yyyy-MM-dd-HH");
 }
 
 function sendNewNoticeMessages_(webhookUrl, notices) {
@@ -623,8 +590,4 @@ function checkedAtText_() {
 
 function checkedAtIso_() {
   return Utilities.formatDate(new Date(), TIME_ZONE, "yyyy-MM-dd HH:mm:ss") + " KST";
-}
-
-function pad2_(value) {
-  return String(value).padStart(2, "0");
 }
