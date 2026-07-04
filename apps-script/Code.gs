@@ -544,6 +544,17 @@ function compareNotices_(left, right) {
   return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
+function truncate_(value, limit) {
+  const text = String(value || "");
+  if (limit <= 0) {
+    return "";
+  }
+  if (text.length <= limit) {
+    return text;
+  }
+  return text.slice(0, limit - 1).replace(/\s+$/g, "") + "…";
+}
+
 function cleanText_(value) {
   return decodeHtml_(String(value || ""))
     .replace(/\s+/g, " ")
