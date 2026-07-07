@@ -24,9 +24,9 @@ DISCORD_WEBHOOK_URL=디스코드_웹훅_URL
 1. 함수 선택 드롭다운에서 `verifySetup`을 선택하고 `Run`을 누릅니다.
 2. Google 권한 승인 화면이 뜨면 승인합니다.
 3. 함수 선택 드롭다운에서 `runSogangNoticeBotManual`을 선택하고 `Run`을 누릅니다.
-4. Discord에 초기화 메시지가 오면 정상입니다.
+4. 실행 로그에 현재 공지 목록을 기준선으로 저장했다는 메시지가 보이면 정상입니다.
 
-초기화 실행은 현재 목록을 기준선으로 저장하고, 다음 실행부터 새 공지만 알립니다.
+초기화 실행은 현재 목록을 기준선으로 저장하고 Discord 메시지는 보내지 않습니다. 다음 실행부터 새 공지가 있을 때만 알립니다.
 
 ## 원하는 시간에 트리거 설치
 
@@ -36,7 +36,7 @@ DISCORD_WEBHOOK_URL=디스코드_웹훅_URL
 
 설치 후 왼쪽 시계 아이콘 `Triggers`에서 `runSogangNoticeBot` 트리거 2개가 보이면 됩니다.
 
-직접 트리거 시간을 추가하거나 바꾸면, `runSogangNoticeBot`은 그 트리거가 실행된 시간마다 Discord로 결과를 보냅니다. 같은 한국시간 날짜-시간대 안에서 중복 실행된 경우에만 한 번 더 보내지 않습니다.
+직접 트리거 시간을 추가하거나 바꾸면, `runSogangNoticeBot`은 그 트리거가 실행된 시간마다 확인하고 새 공지가 있을 때만 Discord로 보냅니다. 같은 한국시간 날짜-시간대 안에서 이미 보낸 새 공지 알림은 한 번 더 보내지 않습니다.
 
 원하는 기본 시간을 코드로 바꾸고 싶다면 `Code.gs` 맨 위의 값을 수정한 뒤 `installProductionTriggers`를 다시 실행합니다.
 
@@ -50,11 +50,11 @@ const DEFAULT_TRIGGER_HOURS_KST = [10, 17];
 const DEFAULT_TRIGGER_HOURS_KST = [9, 13, 18];
 ```
 
-토요일과 일요일에는 트리거가 실행되어도 Discord 알림을 보내지 않습니다. 수동 테스트 함수 `runSogangNoticeBotManual`은 주말 제한을 무시하고 바로 전송합니다.
+토요일과 일요일에는 트리거가 실행되어도 Discord 알림을 보내지 않습니다. 수동 테스트 함수 `runSogangNoticeBotManual`은 주말 제한을 무시하고 바로 확인하지만, 새 공지가 없으면 Discord 메시지를 보내지 않습니다.
 
 ## 수동 실행과 초기화
 
-- `runSogangNoticeBotManual`: 지금 바로 한 번 확인하고 Discord로 결과를 보냅니다.
-- `runSogangNoticeBot`: 트리거용 함수입니다. 트리거가 실행된 시간마다 결과를 보내고, 같은 시간대 중복 알림을 막습니다.
+- `runSogangNoticeBotManual`: 지금 바로 한 번 확인하고, 새 공지가 있을 때만 Discord로 보냅니다.
+- `runSogangNoticeBot`: 트리거용 함수입니다. 트리거가 실행된 시간마다 확인하고, 새 공지가 있을 때만 Discord로 보냅니다.
 - `deleteBotTriggers`: 설치된 봇 트리거를 지웁니다.
-- `resetBotState`: 저장된 공지 확인 상태를 지웁니다. 다음 실행 때 다시 초기화 메시지가 갑니다.
+- `resetBotState`: 저장된 공지 확인 상태를 지웁니다. 다음 실행 때 현재 목록을 다시 기준선으로 저장합니다.

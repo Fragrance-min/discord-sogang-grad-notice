@@ -1,6 +1,6 @@
 # 서강대학교 일반대학원 공지 Discord 알림 봇
 
-서강대학교 일반대학원 공지사항 두 게시판을 확인하고 Discord 웹훅으로 결과를 보냅니다.
+서강대학교 일반대학원 공지사항 두 게시판을 확인하고 새 공지가 있을 때만 Discord 웹훅으로 알림을 보냅니다.
 
 - 학사·수업·졸업: https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=401
 - 장학·등록: https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=402
@@ -16,12 +16,12 @@ GitHub Actions 스케줄은 실행 시간이 몇 분 이상 지연될 수 있어
 GitHub 저장소는 코드 보관과 수동 테스트용으로 두고, 실제 운영은 `apps-script/`의 Google Apps Script 버전으로 실행합니다.
 
 - 새 공지가 있으면 게시판명, 작성일, 제목, 상세 링크를 Discord로 보냅니다.
-- 새 공지가 없으면 "새 공지는 없습니다" 메시지를 Discord로 보냅니다.
+- 새 공지가 없으면 Discord 메시지를 보내지 않고 조용히 종료합니다.
 - Apps Script 운영 버전은 기본 설치 시 한국시간 기준 매일 10:00 근처와 17:00 근처에 확인합니다.
-- Apps Script에서 직접 트리거 시간을 추가하거나 바꾸면, 그 트리거가 실행된 시간마다 Discord로 결과를 보냅니다.
+- Apps Script에서 직접 트리거 시간을 추가하거나 바꾸면, 그 트리거가 실행된 시간마다 확인하고 새 공지가 있을 때만 Discord로 보냅니다.
 - 토요일과 일요일에는 트리거가 실행되어도 Discord 알림을 보내지 않습니다.
-- 봇에는 시간대별 중복 알림 방지 로직이 들어 있어, 같은 한국시간 날짜-시간대에 여러 번 실행되어도 한 번만 Discord로 말합니다.
-- 첫 실행에서는 기존 공지를 새 공지로 쏟아내지 않고, 현재 목록을 기준선으로 저장합니다.
+- 봇에는 시간대별 중복 알림 방지 로직이 들어 있어, 같은 한국시간 날짜-시간대에 여러 번 실행되어도 이미 보낸 새 공지 알림은 한 번만 Discord로 말합니다.
+- 첫 실행에서는 기존 공지를 새 공지로 쏟아내지 않고, 현재 목록을 기준선으로 저장한 뒤 Discord 메시지 없이 종료합니다.
 - 이후 실행부터 이전에 보지 못한 `pkid`를 새 공지로 판단합니다.
 
 Python/GitHub Actions 버전의 상태 파일은 `state/seen_notices.json`에 저장됩니다. Apps Script 버전은 Google Apps Script의 Script Properties에 상태를 저장합니다.
@@ -58,7 +58,7 @@ Actions를 수동 실행할 때 `state/seen_notices.json`을 자동 커밋하려
 2. `apps-script/Code.gs`와 `apps-script/appsscript.json` 내용을 업로드합니다.
 3. Script Properties에 `DISCORD_WEBHOOK_URL`을 추가합니다.
 4. `verifySetup`을 실행해 권한을 승인하고 설정을 확인합니다.
-5. `runSogangNoticeBotManual`을 한 번 실행해 초기화 메시지를 받습니다.
+5. `runSogangNoticeBotManual`을 한 번 실행해 현재 공지 목록을 기준선으로 저장합니다. 이때 Discord 메시지는 보내지 않습니다.
 6. `installProductionTriggers`를 한 번 실행해 기본 한국시간 10시, 17시 트리거를 만듭니다.
 
 자세한 순서는 `apps-script/README.md`에 정리되어 있습니다.

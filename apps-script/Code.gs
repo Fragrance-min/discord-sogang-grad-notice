@@ -121,23 +121,22 @@ function runSogangNoticeBot_(options) {
     });
 
     if (!state.initialized) {
-      sendFirstRunMessage_(webhookUrl, notices.length);
       markSeen_(properties, notices, state);
       properties.setProperty(PROPERTY_INITIALIZED, "true");
-      markReportedSlot_(properties, reportSlot);
       pruneProperties_(properties, SEEN_PREFIX, MAX_SEEN_PROPERTIES);
       pruneProperties_(properties, REPORTED_PREFIX, MAX_REPORTED_PROPERTIES);
+      console.log("Initialized baseline with " + notices.length + " notices; no Discord notification sent.");
       return;
     }
 
     if (newNotices.length) {
       sendNewNoticeMessages_(webhookUrl, newNotices);
+      markReportedSlot_(properties, reportSlot);
     } else {
-      sendNoNewMessage_(webhookUrl, notices.length);
+      console.log("No new notices; no Discord notification sent.");
     }
 
     markSeen_(properties, notices, state);
-    markReportedSlot_(properties, reportSlot);
     pruneProperties_(properties, SEEN_PREFIX, MAX_SEEN_PROPERTIES);
     pruneProperties_(properties, REPORTED_PREFIX, MAX_REPORTED_PROPERTIES);
   } finally {
@@ -472,28 +471,6 @@ function sendNewNoticeMessages_(webhookUrl, notices) {
       embeds: chunk.map(noticeToEmbed_),
     });
   }
-}
-
-function sendNoNewMessage_(webhookUrl, totalCount) {
-  postDiscord_(webhookUrl, {
-    content:
-      "서강대학교 일반대학원 새 공지는 없습니다. 현재 확인한 목록 공지 " +
-      totalCount +
-      "건 기준입니다. (" +
-      checkedAtText_() +
-      ")",
-  });
-}
-
-function sendFirstRunMessage_(webhookUrl, totalCount) {
-  postDiscord_(webhookUrl, {
-    content:
-      "서강대학교 일반대학원 공지 알림 봇을 초기화했어요. 현재 목록 공지 " +
-      totalCount +
-      "건을 기준선으로 저장했고, 다음 실행부터 새 공지를 알려드립니다. (" +
-      checkedAtText_() +
-      ")",
-  });
 }
 
 function postDiscord_(webhookUrl, payload) {

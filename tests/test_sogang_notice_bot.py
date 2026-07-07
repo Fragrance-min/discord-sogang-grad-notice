@@ -13,6 +13,7 @@ from sogang_notice_bot import (
     load_state,
     parse_notice_list,
     report_slot_for_time,
+    run,
     save_state,
     should_retry_discord_with_curl,
 )
@@ -100,6 +101,55 @@ class SogangNoticeBotTests(unittest.TestCase):
             "2026-07-02-17",
         )
         self.assertIsNone(report_slot_for_time(datetime(2026, 7, 2, 16, 59, tzinfo=kst)))
+
+    def test_first_run_and_no_new_do_not_post_discord(self):
+        notices = parse_notice_list(BOARDS[0], SAMPLE_HTML)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "seen_notices.json"
+            args = mock.Mock(
+                state=str(path),
+                webhook_url="https://discord.com/api/webhooks/test/token",
+                dry_run=False,
+                scheduled_run=False,
+                send_all_on_first_run=False,
+            )
+
+            with (
+                mock.patch("sogang_notice_bot.collect_notices", return_value=notices),
+                mock.patch("sogang_notice_bot.post_discord") as post_discord,
+            ):
+                self.assertEqual(run(args), 0)
+                post_discord.assert_not_called()
+
+                self.assertEqual(run(args), 0)
+                post_discord.assert_not_called()
+
+    def test_scheduled_no_new_does_not_record_reported_slot(self):
+        notices = parse_notice_list(BOARDS[0], SAMPLE_HTML)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "seen_notices.json"
+            state = load_state(path)
+            self.assertTrue(save_state(path, notices, state))
+            args = mock.Mock(
+                state=str(path),
+                webhook_url="https://discord.com/api/webhooks/test/token",
+                dry_run=False,
+                scheduled_run=True,
+                send_all_on_first_run=False,
+            )
+
+            with (
+                mock.patch("sogang_notice_bot.collect_notices", return_value=notices),
+                mock.patch("sogang_notice_bot.report_slot_for_time", return_value="2026-07-07-10"),
+                mock.patch("sogang_notice_bot.post_discord") as post_discord,
+            ):
+                self.assertEqual(run(args), 0)
+                post_discord.assert_not_called()
+
+            next_state = load_state(path)
+            self.assertNotIn("2026-07-07-10", next_state["reported_slots"])
 
     def test_discord_cloudflare_1010_retries_only_when_curl_is_available(self):
         with mock.patch("sogang_notice_bot.shutil.which", return_value="/usr/bin/curl"):

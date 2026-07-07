@@ -418,29 +418,6 @@ def notice_to_embed(notice: Notice) -> dict[str, Any]:
     }
 
 
-def send_no_new_message(webhook_url: str, total_count: int, dry_run: bool = False) -> None:
-    checked_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-    payload = {
-        "content": (
-            "서강대학교 일반대학원 새 공지는 없습니다. "
-            f"현재 확인한 목록 공지 {total_count}건 기준입니다. ({checked_at})"
-        )
-    }
-    post_discord(webhook_url, payload, dry_run=dry_run)
-
-
-def send_first_run_message(webhook_url: str, total_count: int, dry_run: bool = False) -> None:
-    checked_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-    payload = {
-        "content": (
-            "서강대학교 일반대학원 공지 알림 봇을 초기화했어요. "
-            f"현재 목록 공지 {total_count}건을 기준선으로 저장했고, 다음 실행부터 새 공지를 알려드립니다. "
-            f"({checked_at})"
-        )
-    }
-    post_discord(webhook_url, payload, dry_run=dry_run)
-
-
 def truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
@@ -512,9 +489,9 @@ def run(args: argparse.Namespace) -> int:
 
     send_all_on_first_run = args.send_all_on_first_run or truthy_env("SEND_ALL_ON_FIRST_RUN")
     if not state_existed and not send_all_on_first_run:
-        send_first_run_message(webhook_url, len(notices), dry_run=dry_run)
+        print(f"Initialized baseline with {len(notices)} notices; no Discord notification sent.")
         if not dry_run:
-            save_state(state_path, notices, state, reported_slot=report_slot)
+            save_state(state_path, notices, state)
         return 0
 
     if new_notices:
@@ -523,9 +500,9 @@ def run(args: argparse.Namespace) -> int:
             save_state(state_path, notices, state, reported_slot=report_slot)
         return 0
 
-    send_no_new_message(webhook_url, len(notices), dry_run=dry_run)
+    print("No new notices; no Discord notification sent.")
     if not dry_run:
-        save_state(state_path, notices, state, reported_slot=report_slot)
+        save_state(state_path, notices, state)
     return 0
 
 
