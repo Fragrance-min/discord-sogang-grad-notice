@@ -127,8 +127,18 @@ function runSogangNoticeBot_(options) {
     }
 
     const notices = collectNotices_();
+    const initializedBoardIds = {};
+    Object.keys(state.seen).forEach(function (noticeId) {
+      initializedBoardIds[noticeId.split(":", 1)[0]] = true;
+    });
+    const baselineBoardIds = {};
+    BOARDS.forEach(function (board) {
+      if (!initializedBoardIds[board.id]) {
+        baselineBoardIds[board.id] = true;
+      }
+    });
     const newNotices = notices.filter(function (notice) {
-      return !state.seen[notice.id];
+      return !baselineBoardIds[notice.boardId] && !state.seen[notice.id];
     });
 
     if (!state.initialized) {
@@ -138,6 +148,18 @@ function runSogangNoticeBot_(options) {
       pruneProperties_(properties, REPORTED_PREFIX, MAX_REPORTED_PROPERTIES);
       console.log("Initialized baseline with " + notices.length + " notices; no Discord notification sent.");
       return;
+    }
+
+    const baselineBoardNames = BOARDS.filter(function (board) {
+      return baselineBoardIds[board.id];
+    }).map(function (board) {
+      return board.name;
+    });
+    if (baselineBoardNames.length) {
+      console.log(
+        "Initialized new board baseline without Discord notification: " +
+          baselineBoardNames.join(", ")
+      );
     }
 
     if (newNotices.length) {
@@ -584,7 +606,7 @@ function sendNewNoticeMessages_(webhookUrl, notices) {
     const chunk = sortedNotices.slice(start, start + MAX_DISCORD_EMBEDS);
     postDiscord_(webhookUrl, {
       content:
-        "서강대학교 일반대학원 새 공지 " +
+        "서강대학교 새 공지 " +
         chunk.length +
         "건을 발견했어요. (" +
         checkedAt +

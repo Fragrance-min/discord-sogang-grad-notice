@@ -358,6 +358,15 @@ def find_new_notices(notices: list[Notice], state: dict[str, Any]) -> list[Notic
     return [notice for notice in notices if notice.notice_id not in seen]
 
 
+def find_uninitialized_board_ids(state: dict[str, Any]) -> set[str]:
+    seen_ids = state.get("seen", {})
+    return {
+        board["id"]
+        for board in BOARDS
+        if not any(notice_id.startswith(f"{board['id']}:") for notice_id in seen_ids)
+    }
+
+
 def post_discord(webhook_url: str, payload: dict[str, Any], dry_run: bool = False) -> None:
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -477,7 +486,7 @@ def send_new_notice_messages(webhook_url: str, notices: list[Notice], dry_run: b
     for start in range(0, len(notices), MAX_DISCORD_EMBEDS):
         chunk = notices[start : start + MAX_DISCORD_EMBEDS]
         payload = {
-            "content": f"서강대학교 일반대학원 새 공지 {len(chunk)}건을 발견했어요. ({checked_at})",
+            "content": f"서강대학교 새 공지 {len(chunk)}건을 발견했어요. ({checked_at})",
             "embeds": [notice_to_embed(notice) for notice in chunk],
         }
         post_discord(webhook_url, payload, dry_run=dry_run)
@@ -568,6 +577,18 @@ def run(args: argparse.Namespace) -> int:
 
     notices = collect_notices()
     new_notices = find_new_notices(notices, state)
+    uninitialized_board_ids = find_uninitialized_board_ids(state) if state_existed else set()
+    if uninitialized_board_ids:
+        new_notices = [
+            notice for notice in new_notices if notice.board_id not in uninitialized_board_ids
+        ]
+        board_names = [
+            board["name"] for board in BOARDS if board["id"] in uninitialized_board_ids
+        ]
+        print(
+            "Initialized new board baseline without Discord notification: "
+            + ", ".join(board_names)
+        )
 
     send_all_on_first_run = args.send_all_on_first_run or truthy_env("SEND_ALL_ON_FIRST_RUN")
     if not state_existed and not send_all_on_first_run:

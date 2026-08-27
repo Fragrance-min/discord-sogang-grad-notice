@@ -10,6 +10,7 @@ from sogang_notice_bot import (
     BOARDS,
     already_reported_slot,
     find_new_notices,
+    find_uninitialized_board_ids,
     load_state,
     parse_notice_list,
     report_slot_for_time,
@@ -103,6 +104,16 @@ class SogangNoticeBotTests(unittest.TestCase):
             self.assertTrue(save_state(path, notices, state))
             next_state = load_state(path)
             self.assertEqual(find_new_notices(notices, next_state), [])
+
+    def test_newly_added_board_is_identified_for_baseline_migration(self):
+        state = {
+            "seen": {
+                "academics:938030": {},
+                "scholarship_registration:937001": {},
+            }
+        }
+
+        self.assertEqual(find_uninitialized_board_ids(state), {"mechanical_engineering"})
 
     def test_state_records_reported_slot(self):
         notices = parse_notice_list(BOARDS[0], SAMPLE_HTML)
