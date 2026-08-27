@@ -23,7 +23,6 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 
-BASE_URL = "https://gradsch.sogang.ac.kr"
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_STATE_PATH = Path("state/seen_notices.json")
 MAX_DISCORD_EMBEDS = 10
@@ -36,6 +35,7 @@ BOARDS = [
         "id": "academics",
         "name": "학사·수업·졸업",
         "bbs_config_fk": "401",
+        "parser": "sogang_cms",
         "url": "https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=401",
         "color": 0x1F77B4,
     },
@@ -43,8 +43,19 @@ BOARDS = [
         "id": "scholarship_registration",
         "name": "장학·등록",
         "bbs_config_fk": "402",
+        "parser": "sogang_cms",
         "url": "https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=402",
         "color": 0x2CA02C,
+    },
+    {
+        "id": "mechanical_engineering",
+        "name": "기계공학과 공지사항",
+        "parser": "gnuboard",
+        "url": (
+            "https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1"
+            "&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD"
+        ),
+        "color": 0xE67E22,
     },
 ]
 
@@ -130,6 +141,51 @@ class NoticeListParser(HTMLParser):
             self._li_depth -= 1
 
 
+class GnuboardNoticeListParser(HTMLParser):
+    """Extract notice rows from the Mechanical Engineering Gnuboard list."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.notices: list[dict[str, Any]] = []
+        self._current: dict[str, Any] | None = None
+        self._in_cell = False
+        self._cell_parts: list[str] = []
+        self._in_title = False
+        self._title_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr = {key: value or "" for key, value in attrs}
+        if tag == "tr":
+            self._current = {"cells": []}
+        elif tag == "td" and self._current is not None:
+            self._in_cell = True
+            self._cell_parts = []
+        elif tag == "a" and self._current is not None:
+            href = html.unescape(attr.get("href", ""))
+            if "board.php" in href and extract_query_value(href, "wr_id"):
+                self._current["href"] = href
+                self._in_title = True
+                self._title_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._in_cell:
+            self._cell_parts.append(data)
+        if self._in_title:
+            self._title_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._in_title and self._current is not None:
+            self._current["title"] = clean_text(" ".join(self._title_parts))
+            self._in_title = False
+        elif tag == "td" and self._in_cell and self._current is not None:
+            self._current["cells"].append(clean_text(" ".join(self._cell_parts)))
+            self._in_cell = False
+        elif tag == "tr" and self._current is not None:
+            if self._current.get("href") and self._current.get("title"):
+                self.notices.append(self._current)
+            self._current = None
+
+
 def clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(value)).strip()
 
@@ -159,19 +215,29 @@ def fetch_text(url: str, retries: int = 3, timeout: int = 20) -> str:
 
 
 def parse_notice_list(board: dict[str, str], html_text: str) -> list[Notice]:
-    parser = NoticeListParser()
+    parser = GnuboardNoticeListParser() if board.get("parser") == "gnuboard" else NoticeListParser()
     parser.feed(html_text)
 
     notices: list[Notice] = []
     for row in parser.notices:
-        absolute_url = normalize_notice_url(row["href"])
-        pkid = extract_pkid(absolute_url)
+        absolute_url = normalize_notice_url(board, row["href"])
+        id_param = "wr_id" if board.get("parser") == "gnuboard" else "pkid"
+        pkid = extract_query_value(absolute_url, id_param)
         if not pkid:
             continue
 
-        spans = row.get("spans", [])
-        posted_at = next((part for part in spans if re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", part)), None)
-        writer = next((part for part in spans if part and part != posted_at and not part.replace(",", "").isdigit()), None)
+        spans = row.get("cells", []) if board.get("parser") == "gnuboard" else row.get("spans", [])
+        date_pattern = r"\d{4}[.-]\d{2}[.-]\d{2}"
+        posted_at = next((part for part in spans if re.fullmatch(date_pattern, part)), None)
+        if board.get("parser") == "gnuboard":
+            cells = row.get("cells", [])
+            date_index = cells.index(posted_at) if posted_at in cells else -1
+            writer = cells[date_index - 1] if date_index > 0 else None
+        else:
+            writer = next(
+                (part for part in spans if part and part != posted_at and not part.replace(",", "").isdigit()),
+                None,
+            )
 
         notices.append(
             Notice(
@@ -188,12 +254,23 @@ def parse_notice_list(board: dict[str, str], html_text: str) -> list[Notice]:
     return notices
 
 
-def normalize_notice_url(href: str) -> str:
-    absolute = urljoin(BASE_URL, href)
+def normalize_notice_url(board: dict[str, str], href: str) -> str:
+    absolute = urljoin(board["url"], href)
     parsed = urlparse(absolute)
     query = parse_qs(parsed.query, keep_blank_values=True)
 
-    desired_keys = ["bbsConfigFK", "siteId", "pkid", "currentPage", "searchField", "searchLowItem", "searchValue"]
+    if board.get("parser") == "gnuboard":
+        desired_keys = ["bo_table", "wr_id", "sca"]
+    else:
+        desired_keys = [
+            "bbsConfigFK",
+            "siteId",
+            "pkid",
+            "currentPage",
+            "searchField",
+            "searchLowItem",
+            "searchValue",
+        ]
     normalized_query = {}
     for key in desired_keys:
         if key in query:
@@ -202,10 +279,10 @@ def normalize_notice_url(href: str) -> str:
     return parsed._replace(query=urlencode(normalized_query)).geturl()
 
 
-def extract_pkid(url: str) -> str:
+def extract_query_value(url: str, key: str) -> str:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
-    return query.get("pkid", [""])[0]
+    return query.get(key, [""])[0]
 
 
 def load_state(path: Path) -> dict[str, Any]:
@@ -267,7 +344,12 @@ def collect_notices() -> list[Notice]:
     notices: list[Notice] = []
     for board in BOARDS:
         page = fetch_text(board["url"])
-        notices.extend(parse_notice_list(board, page))
+        board_notices = parse_notice_list(board, page)
+        if not board_notices:
+            raise RuntimeError(
+                f"No notices parsed from {board['name']}. The page may be blocked or its HTML changed."
+            )
+        notices.extend(board_notices)
     return notices
 
 

@@ -53,6 +53,20 @@ SAMPLE_HTML = """
 </div>
 """
 
+GNUBOARD_HTML = """
+<table>
+  <tbody>
+    <tr>
+      <td>329</td>
+      <td><a href="https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1&amp;wr_id=979&amp;sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD">기계공학과 인지컨트롤스 장학금 대상자 선발안내</a></td>
+      <td>최고관리자</td>
+      <td>2026-08-26</td>
+      <td>41</td>
+    </tr>
+  </tbody>
+</table>
+"""
+
 
 class SogangNoticeBotTests(unittest.TestCase):
     def test_parse_notice_list_extracts_title_date_writer_and_pkid(self):
@@ -64,6 +78,19 @@ class SogangNoticeBotTests(unittest.TestCase):
         self.assertEqual(notices[0].writer, "gradsch")
         self.assertIn("[공지] [학점교류]", notices[0].title)
         self.assertTrue(notices[0].url.startswith("https://gradsch.sogang.ac.kr/front/cmsboardview.do"))
+
+    def test_parse_gnuboard_notice_list_extracts_wr_id_and_metadata(self):
+        notices = parse_notice_list(BOARDS[2], GNUBOARD_HTML)
+
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0].pkid, "979")
+        self.assertEqual(notices[0].posted_at, "2026-08-26")
+        self.assertEqual(notices[0].writer, "최고관리자")
+        self.assertIn("인지컨트롤스 장학금", notices[0].title)
+        self.assertEqual(
+            notices[0].url,
+            "https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1&wr_id=979&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD",
+        )
 
     def test_state_roundtrip_prevents_duplicate_notifications(self):
         notices = parse_notice_list(BOARDS[0], SAMPLE_HTML)

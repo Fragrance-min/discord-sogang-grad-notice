@@ -2,6 +2,8 @@
 
 GitHub Actions 스케줄은 꺼두고, 실제 알림 실행은 Google Apps Script 시간 기반 트리거로 돌리는 버전입니다.
 
+감시 대상은 대학원 공지사항 2개 게시판과 기계공학과 공지사항 게시판입니다.
+
 ## 업로드
 
 1. https://script.google.com 에서 새 프로젝트를 만듭니다.

@@ -1,4 +1,4 @@
-const BASE_URL = "https://gradsch.sogang.ac.kr";
+const GRADSCH_BASE_URL = "https://gradsch.sogang.ac.kr";
 const TIME_ZONE = "Asia/Seoul";
 const BOT_TRIGGER_FUNCTION = "runSogangNoticeBot";
 const PROPERTY_DISCORD_WEBHOOK_URL = "DISCORD_WEBHOOK_URL";
@@ -16,14 +16,25 @@ const BOARDS = [
   {
     id: "academics",
     name: "학사·수업·졸업",
+    parser: "sogang_cms",
     url: "https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=401",
     color: 0x1f77b4,
   },
   {
     id: "scholarship_registration",
     name: "장학·등록",
+    parser: "sogang_cms",
     url: "https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=402",
     color: 0x2ca02c,
+  },
+  {
+    id: "mechanical_engineering",
+    name: "기계공학과 공지사항",
+    parser: "gnuboard",
+    url:
+      "https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1" +
+      "&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD",
+    color: 0xe67e22,
   },
 ];
 
@@ -149,7 +160,15 @@ function collectNotices_() {
 
   BOARDS.forEach(function (board) {
     const html = fetchText_(board.url);
-    parseNoticeList_(board, html).forEach(function (notice) {
+    const boardNotices = parseNoticeList_(board, html);
+    if (!boardNotices.length) {
+      throw new Error(
+        "No notices parsed from " +
+          board.name +
+          ". The page may be blocked or its HTML changed."
+      );
+    }
+    boardNotices.forEach(function (notice) {
       notices.push(notice);
     });
   });
@@ -177,6 +196,10 @@ function fetchText_(url) {
 }
 
 function parseNoticeList_(board, html) {
+  if (board.parser === "gnuboard") {
+    return parseGnuboardNoticeList_(board, html);
+  }
+
   const notices = [];
   const seenPkids = {};
   const itemRegex = /<li\b[\s\S]*?<\/li>/gi;
@@ -224,6 +247,93 @@ function parseNoticeList_(board, html) {
   }
 
   return notices;
+}
+
+function parseGnuboardNoticeList_(board, html) {
+  const notices = [];
+  const seenIds = {};
+  const rowRegex = /<tr\b[\s\S]*?<\/tr>/gi;
+  let rowMatch;
+
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const rowHtml = rowMatch[0];
+    const anchor = findGnuboardTitleAnchor_(rowHtml);
+    if (!anchor) {
+      continue;
+    }
+
+    const url = normalizeGnuboardNoticeUrl_(board, anchor.href);
+    const wrId = extractQueryValue_(url, "wr_id");
+    if (!wrId || seenIds[wrId]) {
+      continue;
+    }
+
+    const cells = extractCellTexts_(rowHtml);
+    const postedAt = findFirst_(cells, function (part) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(part);
+    });
+    const dateIndex = postedAt ? cells.indexOf(postedAt) : -1;
+    const writer = dateIndex > 0 ? cells[dateIndex - 1] : null;
+
+    seenIds[wrId] = true;
+    notices.push({
+      id: board.id + ":" + wrId,
+      boardId: board.id,
+      boardName: board.name,
+      boardUrl: board.url,
+      title: cleanText_(stripTags_(anchor.html)),
+      url: url,
+      pkid: wrId,
+      postedAt: postedAt || null,
+      writer: writer || null,
+      color: board.color,
+    });
+  }
+
+  return notices;
+}
+
+function findGnuboardTitleAnchor_(html) {
+  const anchorRegex = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let anchorMatch;
+
+  while ((anchorMatch = anchorRegex.exec(html)) !== null) {
+    const href = decodeHtml_(extractAttribute_(anchorMatch[1], "href"));
+    if (href && href.indexOf("board.php") !== -1 && extractQueryValue_(href, "wr_id")) {
+      return { href: href, html: anchorMatch[2] };
+    }
+  }
+
+  return null;
+}
+
+function extractCellTexts_(html) {
+  const cells = [];
+  const cellRegex = /<td\b[^>]*>([\s\S]*?)<\/td>/gi;
+  let cellMatch;
+
+  while ((cellMatch = cellRegex.exec(html)) !== null) {
+    cells.push(cleanText_(stripTags_(cellMatch[1])));
+  }
+
+  return cells;
+}
+
+function normalizeGnuboardNoticeUrl_(board, href) {
+  const absolute = toAbsoluteUrlForBase_(href, board.url);
+  const questionIndex = absolute.indexOf("?");
+  const path = questionIndex === -1 ? absolute : absolute.slice(0, questionIndex);
+  const query = parseQuery_(questionIndex === -1 ? "" : absolute.slice(questionIndex + 1));
+  const keys = ["bo_table", "wr_id", "sca"];
+  const parts = [];
+
+  keys.forEach(function (key) {
+    if (Object.prototype.hasOwnProperty.call(query, key)) {
+      parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(query[key]));
+    }
+  });
+
+  return parts.length ? path + "?" + parts.join("&") : path;
 }
 
 function findTitleAnchor_(html) {
@@ -306,13 +416,20 @@ function normalizeNoticeUrl_(href) {
 }
 
 function toAbsoluteUrl_(href) {
+  return toAbsoluteUrlForBase_(href, GRADSCH_BASE_URL);
+}
+
+function toAbsoluteUrlForBase_(href, baseUrl) {
   if (/^https?:\/\//i.test(href)) {
     return href;
   }
+  const baseMatch = /^(https?:\/\/[^/]+)/i.exec(baseUrl);
+  const origin = baseMatch ? baseMatch[1] : GRADSCH_BASE_URL;
   if (href.indexOf("/") === 0) {
-    return BASE_URL + href;
+    return origin + href;
   }
-  return BASE_URL + "/" + href;
+  const basePath = baseUrl.split("?")[0];
+  return basePath.slice(0, basePath.lastIndexOf("/") + 1) + href;
 }
 
 function parseQuery_(queryText) {
@@ -339,11 +456,15 @@ function parseQuery_(queryText) {
 }
 
 function extractPkid_(url) {
+  return extractQueryValue_(url, "pkid");
+}
+
+function extractQueryValue_(url, key) {
   const questionIndex = url.indexOf("?");
   if (questionIndex === -1) {
     return "";
   }
-  return parseQuery_(url.slice(questionIndex + 1)).pkid || "";
+  return parseQuery_(url.slice(questionIndex + 1))[key] || "";
 }
 
 function getWebhookUrl_(properties) {
