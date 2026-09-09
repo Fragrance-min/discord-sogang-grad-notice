@@ -68,6 +68,18 @@ GNUBOARD_HTML = """
 </table>
 """
 
+NEW_GNUBOARD_HTML = """
+<table><tbody>
+  <tr>
+    <td>500</td>
+    <td><a href="/ko/board/notice/2408">차세대반도체연계전공 신규 학생 모집</a><span>2026.09.01</span></td>
+    <td>기계공학과</td>
+    <td>2026.09.01</td>
+    <td>25</td>
+  </tr>
+</tbody></table>
+"""
+
 
 class SogangNoticeBotTests(unittest.TestCase):
     def test_parse_notice_list_extracts_title_date_writer_and_pkid(self):
@@ -92,6 +104,15 @@ class SogangNoticeBotTests(unittest.TestCase):
             notices[0].url,
             "https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1&wr_id=979&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD",
         )
+
+    def test_parse_new_gnuboard_notice_list_extracts_path_id(self):
+        notices = parse_notice_list(BOARDS[2], NEW_GNUBOARD_HTML)
+
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0].pkid, "2408")
+        self.assertEqual(notices[0].posted_at, "2026.09.01")
+        self.assertEqual(notices[0].writer, "기계공학과")
+        self.assertEqual(notices[0].url, "https://me.sogang.ac.kr/ko/board/notice/2408")
 
     def test_state_roundtrip_prevents_duplicate_notifications(self):
         notices = parse_notice_list(BOARDS[0], SAMPLE_HTML)

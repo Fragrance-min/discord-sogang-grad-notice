@@ -51,10 +51,7 @@ BOARDS = [
         "id": "mechanical_engineering",
         "name": "기계공학과 공지사항",
         "parser": "gnuboard",
-        "url": (
-            "https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1"
-            "&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD"
-        ),
+        "url": "https://me.sogang.ac.kr/ko/board/notice",
         "color": 0xE67E22,
     },
 ]
@@ -162,7 +159,10 @@ class GnuboardNoticeListParser(HTMLParser):
             self._cell_parts = []
         elif tag == "a" and self._current is not None:
             href = html.unescape(attr.get("href", ""))
-            if "board.php" in href and extract_query_value(href, "wr_id"):
+            if (
+                ("board.php" in href and extract_query_value(href, "wr_id"))
+                or re.search(r"/ko/board/notice/\d+", href)
+            ):
                 self._current["href"] = href
                 self._in_title = True
                 self._title_parts = []
@@ -222,16 +222,32 @@ def parse_notice_list(board: dict[str, str], html_text: str) -> list[Notice]:
     for row in parser.notices:
         absolute_url = normalize_notice_url(board, row["href"])
         id_param = "wr_id" if board.get("parser") == "gnuboard" else "pkid"
-        pkid = extract_query_value(absolute_url, id_param)
+        pkid = extract_notice_id(board, absolute_url, id_param)
         if not pkid:
             continue
 
         spans = row.get("cells", []) if board.get("parser") == "gnuboard" else row.get("spans", [])
         date_pattern = r"\d{4}[.-]\d{2}[.-]\d{2}"
-        posted_at = next((part for part in spans if re.fullmatch(date_pattern, part)), None)
+        posted_at = next(
+            (
+                match.group(0)
+                for part in spans
+                for match in [re.search(date_pattern, part)]
+                if match
+            ),
+            None,
+        )
         if board.get("parser") == "gnuboard":
             cells = row.get("cells", [])
-            date_index = cells.index(posted_at) if posted_at in cells else -1
+            date_index = next(
+                (index for index, cell in enumerate(cells) if re.fullmatch(date_pattern, cell)),
+                -1,
+            )
+            if date_index == -1:
+                date_index = next(
+                    (index for index, cell in enumerate(cells) if re.search(date_pattern, cell)),
+                    -1,
+                )
             writer = cells[date_index - 1] if date_index > 0 else None
         else:
             writer = next(
@@ -283,6 +299,14 @@ def extract_query_value(url: str, key: str) -> str:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
     return query.get(key, [""])[0]
+
+
+def extract_notice_id(board: dict[str, str], url: str, query_key: str) -> str:
+    query_id = extract_query_value(url, query_key)
+    if query_id or board.get("parser") != "gnuboard":
+        return query_id
+    match = re.search(r"/ko/board/notice/(\d+)", url)
+    return match.group(1) if match else ""
 
 
 def load_state(path: Path) -> dict[str, Any]:

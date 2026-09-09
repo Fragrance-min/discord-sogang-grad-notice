@@ -4,7 +4,7 @@
 
 - 학사·수업·졸업: https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=401
 - 장학·등록: https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=402
-- 기계공학과 공지사항: https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD
+- 기계공학과 공지사항: https://me.sogang.ac.kr/ko/board/notice
 
 ## 권장 운영 방식
 

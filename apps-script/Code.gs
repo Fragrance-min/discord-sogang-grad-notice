@@ -3,6 +3,8 @@ const TIME_ZONE = "Asia/Seoul";
 const BOT_TRIGGER_FUNCTION = "runSogangNoticeBot";
 const PROPERTY_DISCORD_WEBHOOK_URL = "DISCORD_WEBHOOK_URL";
 const PROPERTY_INITIALIZED = "INITIALIZED";
+const PROPERTY_MECHANICAL_CANONICAL_MIGRATION = "MECHANICAL_CANONICAL_MIGRATION_V1";
+const MECHANICAL_MIGRATION_CUTOFF = "2026-08-31";
 const SEEN_PREFIX = "seen.";
 const REPORTED_PREFIX = "reported.";
 const MAX_DISCORD_EMBEDS = 10;
@@ -31,9 +33,7 @@ const BOARDS = [
     id: "mechanical_engineering",
     name: "기계공학과 공지사항",
     parser: "gnuboard",
-    url:
-      "https://me.sogang.ac.kr/v2/bbs/board.php?bo_table=sub6_1" +
-      "&sca=%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD",
+    url: "https://me.sogang.ac.kr/ko/board/notice",
     color: 0xe67e22,
   },
 ];
@@ -94,6 +94,7 @@ function resetBotState() {
   Object.keys(allProperties).forEach(function (key) {
     if (
       key === PROPERTY_INITIALIZED ||
+      key === PROPERTY_MECHANICAL_CANONICAL_MIGRATION ||
       key.indexOf(SEEN_PREFIX) === 0 ||
       key.indexOf(REPORTED_PREFIX) === 0
     ) {
@@ -127,13 +128,21 @@ function runSogangNoticeBot_(options) {
     }
 
     const notices = collectNotices_();
+    const mechanicalMigrationPending =
+      state.initialized &&
+      properties.getProperty(PROPERTY_MECHANICAL_CANONICAL_MIGRATION) !== "true";
+    if (mechanicalMigrationPending) {
+      migrateMechanicalNoticeState_(properties, notices, state);
+    }
+
     const initializedBoardIds = {};
     Object.keys(state.seen).forEach(function (noticeId) {
       initializedBoardIds[noticeId.split(":", 1)[0]] = true;
     });
     const baselineBoardIds = {};
     BOARDS.forEach(function (board) {
-      if (!initializedBoardIds[board.id]) {
+      if (!initializedBoardIds[board.id] &&
+          !(mechanicalMigrationPending && board.id === "mechanical_engineering")) {
         baselineBoardIds[board.id] = true;
       }
     });
@@ -144,6 +153,7 @@ function runSogangNoticeBot_(options) {
     if (!state.initialized) {
       markSeen_(properties, notices, state);
       properties.setProperty(PROPERTY_INITIALIZED, "true");
+      properties.setProperty(PROPERTY_MECHANICAL_CANONICAL_MIGRATION, "true");
       pruneProperties_(properties, SEEN_PREFIX, MAX_SEEN_PROPERTIES);
       pruneProperties_(properties, REPORTED_PREFIX, MAX_REPORTED_PROPERTIES);
       console.log("Initialized baseline with " + notices.length + " notices; no Discord notification sent.");
@@ -285,16 +295,26 @@ function parseGnuboardNoticeList_(board, html) {
     }
 
     const url = normalizeGnuboardNoticeUrl_(board, anchor.href);
-    const wrId = extractQueryValue_(url, "wr_id");
+    const wrId = extractGnuboardNoticeId_(url);
     if (!wrId || seenIds[wrId]) {
       continue;
     }
 
     const cells = extractCellTexts_(rowHtml);
     const postedAt = findFirst_(cells, function (part) {
-      return /^\d{4}-\d{2}-\d{2}$/.test(part);
+      return /\d{4}[.-]\d{2}[.-]\d{2}/.test(part);
     });
-    const dateIndex = postedAt ? cells.indexOf(postedAt) : -1;
+    const normalizedPostedAt = postedAt
+      ? /\d{4}[.-]\d{2}[.-]\d{2}/.exec(postedAt)[0]
+      : null;
+    let dateIndex = cells.findIndex(function (part) {
+      return /^\d{4}[.-]\d{2}[.-]\d{2}$/.test(part);
+    });
+    if (dateIndex === -1) {
+      dateIndex = cells.findIndex(function (part) {
+        return /\d{4}[.-]\d{2}[.-]\d{2}/.test(part);
+      });
+    }
     const writer = dateIndex > 0 ? cells[dateIndex - 1] : null;
 
     seenIds[wrId] = true;
@@ -306,7 +326,7 @@ function parseGnuboardNoticeList_(board, html) {
       title: cleanText_(stripTags_(anchor.html)),
       url: url,
       pkid: wrId,
-      postedAt: postedAt || null,
+      postedAt: normalizedPostedAt,
       writer: writer || null,
       color: board.color,
     });
@@ -321,7 +341,11 @@ function findGnuboardTitleAnchor_(html) {
 
   while ((anchorMatch = anchorRegex.exec(html)) !== null) {
     const href = decodeHtml_(extractAttribute_(anchorMatch[1], "href"));
-    if (href && href.indexOf("board.php") !== -1 && extractQueryValue_(href, "wr_id")) {
+    if (
+      href &&
+      ((href.indexOf("board.php") !== -1 && extractQueryValue_(href, "wr_id")) ||
+        /\/ko\/board\/notice\/\d+/.test(href))
+    ) {
       return { href: href, html: anchorMatch[2] };
     }
   }
@@ -343,6 +367,10 @@ function extractCellTexts_(html) {
 
 function normalizeGnuboardNoticeUrl_(board, href) {
   const absolute = toAbsoluteUrlForBase_(href, board.url);
+  const newPathMatch = /^(https?:\/\/[^/]+\/ko\/board\/notice\/\d+)/i.exec(absolute);
+  if (newPathMatch) {
+    return newPathMatch[1];
+  }
   const questionIndex = absolute.indexOf("?");
   const path = questionIndex === -1 ? absolute : absolute.slice(0, questionIndex);
   const query = parseQuery_(questionIndex === -1 ? "" : absolute.slice(questionIndex + 1));
@@ -489,6 +517,15 @@ function extractQueryValue_(url, key) {
   return parseQuery_(url.slice(questionIndex + 1))[key] || "";
 }
 
+function extractGnuboardNoticeId_(url) {
+  const queryId = extractQueryValue_(url, "wr_id");
+  if (queryId) {
+    return queryId;
+  }
+  const pathMatch = /\/ko\/board\/notice\/(\d+)/i.exec(url);
+  return pathMatch ? pathMatch[1] : "";
+}
+
 function getWebhookUrl_(properties) {
   const webhookUrl = (properties.getProperty(PROPERTY_DISCORD_WEBHOOK_URL) || "").trim();
   if (!webhookUrl) {
@@ -551,6 +588,35 @@ function markSeen_(properties, notices, state) {
   if (Object.keys(updates).length) {
     properties.setProperties(updates);
   }
+}
+
+function migrateMechanicalNoticeState_(properties, notices, state) {
+  const oldMechanicalNotices = notices.filter(function (notice) {
+    return (
+      notice.boardId === "mechanical_engineering" &&
+      normalizeNoticeDate_(notice.postedAt) <= MECHANICAL_MIGRATION_CUTOFF
+    );
+  });
+
+  markSeen_(properties, oldMechanicalNotices, state);
+  oldMechanicalNotices.forEach(function (notice) {
+    state.seen[notice.id] = state.seen[notice.id] || {
+      boardName: notice.boardName,
+      title: notice.title,
+      url: notice.url,
+      pkid: notice.pkid,
+      postedAt: notice.postedAt,
+    };
+  });
+  properties.setProperty(PROPERTY_MECHANICAL_CANONICAL_MIGRATION, "true");
+  console.log(
+    "Migrated " + oldMechanicalNotices.length +
+      " pre-September mechanical engineering notices without notification."
+  );
+}
+
+function normalizeNoticeDate_(value) {
+  return String(value || "").replace(/[.]/g, "-").slice(0, 10);
 }
 
 function markReportedSlot_(properties, reportSlot) {
