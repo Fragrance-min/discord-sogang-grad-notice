@@ -54,6 +54,14 @@ const DEFAULT_TRIGGER_HOURS_KST = [9, 13, 18];
 
 토요일과 일요일에는 트리거가 실행되어도 Discord 알림을 보내지 않습니다. 수동 테스트 함수 `runSogangNoticeBotManual`은 주말 제한을 무시하고 바로 확인하지만, 새 공지가 없으면 Discord 메시지를 보내지 않습니다.
 
+## 재시도 동작
+
+- 공지 게시판 요청이 HTTP 429 또는 5xx로 실패하면 최대 4번 다시 시도합니다. 응답에 `Retry-After` 헤더가 있으면 그 시간만큼 기다리고, 없으면 5초부터 두 배씩 늘려 기다립니다(최대 60초).
+- Discord 웹훅이 HTTP 429(요청 제한)를 돌려주면 같은 방식으로 최대 4번 다시 보냅니다. 그 밖의 오류는 바로 실패로 처리합니다.
+- 새 공지가 10건을 넘어 메시지를 여러 번 나눠 보낼 때는 메시지 사이에 3초씩 쉽니다.
+
+관련 값은 `Code.gs` 맨 위의 `DISCORD_MAX_RETRIES`, `DISCORD_RETRY_BASE_MS`, `DISCORD_MESSAGE_GAP_MS`에서 바꿀 수 있습니다. 게시판 요청 재시도 값은 `fetchText_` 함수 안에 있습니다.
+
 ## 수동 실행과 초기화
 
 - `runSogangNoticeBotManual`: 지금 바로 한 번 확인하고, 새 공지가 있을 때만 Discord로 보냅니다.
