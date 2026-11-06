@@ -8,6 +8,9 @@ const MECHANICAL_MIGRATION_CUTOFF = "2026-08-31";
 const SEEN_PREFIX = "seen.";
 const REPORTED_PREFIX = "reported.";
 const MAX_DISCORD_EMBEDS = 10;
+const DISCORD_MAX_RETRIES = 4;
+const DISCORD_RETRY_BASE_MS = 5000;
+const DISCORD_MESSAGE_GAP_MS = 3000;
 const MAX_SEEN_PROPERTIES = 500;
 const MAX_REPORTED_PROPERTIES = 120;
 const DEFAULT_TRIGGER_HOURS_KST = [10, 17];
@@ -209,22 +212,63 @@ function collectNotices_() {
 }
 
 function fetchText_(url) {
-  const response = UrlFetchApp.fetch(url, {
-    method: "get",
-    followRedirects: true,
-    muteHttpExceptions: true,
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (compatible; SogangNoticeBot/1.0; +https://github.com)",
-    },
-  });
-  const status = response.getResponseCode();
+  const maxRetries = 4;
+  const baseDelayMs = 5000;
 
-  if (status < 200 || status >= 300) {
-    throw new Error("Failed to fetch " + url + " with HTTP " + status + ".");
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const response = UrlFetchApp.fetch(url, {
+      method: "get",
+      followRedirects: true,
+      muteHttpExceptions: true,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; SogangNoticeBot/1.0; +https://github.com)",
+      },
+    });
+    const status = response.getResponseCode();
+
+    if (status >= 200 && status < 300) {
+      return response.getContentText("UTF-8");
+    }
+
+    const retryable = status === 429 || (status >= 500 && status < 600);
+    if (!retryable || attempt === maxRetries) {
+      const body = response.getContentText("UTF-8").slice(0, 500);
+      throw new Error(
+        "Failed to fetch " + url + " with HTTP " + status + ". Response: " + body
+      );
+    }
+
+    const delayMs = fetchRetryAfterMs_(response, attempt, baseDelayMs);
+    console.log(
+      "Notice board fetch returned HTTP " +
+        status +
+        "; retrying in " +
+        delayMs +
+        " ms (retry " +
+        (attempt + 1) +
+        "/" +
+        maxRetries +")."
+    );
+    Utilities.sleep(delayMs);
   }
 
-  return response.getContentText("UTF-8");
+  throw new Error("Failed to fetch " + url + " after retries.");
+}
+
+function fetchRetryAfterMs_(response, attempt, baseDelayMs) {
+  const headers = response.getAllHeaders ? response.getAllHeaders() : {};
+  const rawRetryAfter = headers["Retry-After"] || headers["retry-after"];
+  const retryAfter = Array.isArray(rawRetryAfter)
+    ? rawRetryAfter[0]
+    : rawRetryAfter;
+  const seconds = Number(retryAfter);
+
+  if (isFinite(seconds) && seconds > 0) {
+    return Math.min(60000, Math.max(1000, Math.ceil(seconds * 1000)));
+  }
+
+  return Math.min(60000, baseDelayMs * Math.pow(2, attempt));
 }
 
 function parseNoticeList_(board, html) {
@@ -679,31 +723,63 @@ function sendNewNoticeMessages_(webhookUrl, notices) {
         ")",
       embeds: chunk.map(noticeToEmbed_),
     });
+    if (start + MAX_DISCORD_EMBEDS < sortedNotices.length) {
+      Utilities.sleep(DISCORD_MESSAGE_GAP_MS);
+    }
   }
 }
 
 function postDiscord_(webhookUrl, payload) {
-  const response = UrlFetchApp.fetch(webhookUrl, {
-    method: "post",
-    contentType: "application/json; charset=utf-8",
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
-    followRedirects: true,
-    headers: {
-      Accept: "application/json",
-      "User-Agent": DISCORD_USER_AGENT,
-    },
-  });
-  const status = response.getResponseCode();
+  for (let attempt = 0; attempt <= DISCORD_MAX_RETRIES; attempt += 1) {
+    const response = UrlFetchApp.fetch(webhookUrl, {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        Accept: "application/json",
+        "User-Agent": DISCORD_USER_AGENT,
+      },
+    });
+    const status = response.getResponseCode();
 
-  if (status < 200 || status >= 300) {
-    throw new Error(
-      "Discord webhook failed with HTTP " +
-        status +
-        ". Response: " +
-        truncate_(response.getContentText(), 500)
+    if (status >= 200 && status < 300) {
+      return;
+    }
+
+    const body = response.getContentText();
+    if (status !== 429 || attempt === DISCORD_MAX_RETRIES) {
+      throw new Error(
+        "Discord webhook failed with HTTP " +
+          status +
+          ". Response: " +
+          truncate_(body, 500)
+      );
+    }
+
+    const retryAfterMs = discordRetryAfterMs_(response, attempt);
+    console.log(
+      "Discord rate limited the webhook; retrying in " +
+        retryAfterMs +
+        " ms (attempt " +
+        (attempt + 1) +
+        "/" +
+        DISCORD_MAX_RETRIES +
+        ")."
     );
+    Utilities.sleep(retryAfterMs);
   }
+}
+
+function discordRetryAfterMs_(response, attempt) {
+  const headers = response.getAllHeaders ? response.getAllHeaders() : {};
+  const retryAfter = headers["Retry-After"] || headers["retry-after"];
+  const retryAfterSeconds = parseFloat(Array.isArray(retryAfter) ? retryAfter[0] : retryAfter);
+  if (isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.min(60000, Math.max(1000, Math.ceil(retryAfterSeconds * 1000)));
+  }
+  return Math.min(60000, DISCORD_RETRY_BASE_MS * Math.pow(2, attempt));
 }
 
 function noticeToEmbed_(notice) {
