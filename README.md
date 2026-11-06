@@ -5,6 +5,7 @@
 - 학사·수업·졸업: https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=401
 - 장학·등록: https://gradsch.sogang.ac.kr/front/cmsboardlist.do?siteId=gradsch&bbsConfigFK=402
 - 기계공학과 공지사항: https://me.sogang.ac.kr/ko/board/notice
+- 서강대 일반공지: https://www.sogang.ac.kr/ko/story/notification-general (Apps Script 버전에만 있습니다. Python/GitHub Actions 버전에는 아직 없습니다.)
 
 ## 권장 운영 방식
 
@@ -23,7 +24,7 @@ GitHub 저장소는 코드 보관과 수동 테스트용으로 두고, 실제 �
 - 토요일과 일요일에는 트리거가 실행되어도 Discord 알림을 보내지 않습니다.
 - 봇에는 시간대별 중복 알림 방지 로직이 들어 있어, 같은 한국시간 날짜-시간대에 여러 번 실행되어도 이미 보낸 새 공지 알림은 한 번만 Discord로 말합니다.
 - 첫 실행에서는 기존 공지를 새 공지로 쏟아내지 않고, 현재 목록을 기준선으로 저장한 뒤 Discord 메시지 없이 종료합니다.
-- 이후 실행부터 이전에 보지 못한 게시글 식별자(대학원 게시판의 `pkid`, 기계공학과 게시판의 `wr_id`)를 새 공지로 판단합니다.
+- 이후 실행부터 이전에 보지 못한 게시글 식별자(대학원 게시판의 `pkid`, 기계공학과 게시판의 `wr_id`, 일반공지의 `pkId`)를 새 공지로 판단합니다.
 
 Python/GitHub Actions 버전의 상태 파일은 `state/seen_notices.json`에 저장됩니다. Apps Script 버전은 Google Apps Script의 Script Properties에 상태를 저장합니다.
 

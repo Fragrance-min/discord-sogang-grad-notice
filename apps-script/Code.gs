@@ -39,6 +39,22 @@ const BOARDS = [
     url: "https://me.sogang.ac.kr/ko/board/notice",
     color: 0xe67e22,
   },
+  {
+    id: "sogang_general",
+    name: "서강대 일반공지",
+    parser: "sogang_api",
+    url: "https://www.sogang.ac.kr/ko/story/notification-general",
+    apiUrl:
+      "https://www.sogang.ac.kr/api/v1/mainKo/BbsData/boardList" +
+      "?pageNum=1&pageSize=20&bbsConfigFk=1&category=&regDateFrom=01-01-2018" +
+      "&title=&content=&username=",
+    detailUrlBase: "https://www.sogang.ac.kr/ko/detail/",
+    bbsConfigFk: 1,
+    color: 0x9b1b30,
+    // If this board fails (blocked API, HTML change), skip it for this run
+    // instead of stopping notifications for the other boards.
+    optional: true,
+  },
 ];
 
 function runSogangNoticeBot() {
@@ -84,8 +100,17 @@ function verifySetup() {
   getWebhookUrl_(properties);
 
   const notices = collectNotices_();
+  const countsByBoard = {};
+  notices.forEach(function (notice) {
+    countsByBoard[notice.boardId] = (countsByBoard[notice.boardId] || 0) + 1;
+  });
+  const boardSummary = BOARDS.map(function (board) {
+    const count = countsByBoard[board.id] || 0;
+    return board.name + ": " + (count ? count + " notices" : "FAILED (skipped)");
+  }).join("; ");
   const message =
-    "Setup OK. Found " + notices.length + " notices across " + BOARDS.length + " boards.";
+    "Setup OK. Found " + notices.length + " notices across " + BOARDS.length + " boards. " +
+    boardSummary;
   console.log(message);
   return message;
 }
@@ -194,14 +219,17 @@ function collectNotices_() {
   const notices = [];
 
   BOARDS.forEach(function (board) {
-    const html = fetchText_(board.url);
-    const boardNotices = parseNoticeList_(board, html);
-    if (!boardNotices.length) {
-      throw new Error(
-        "No notices parsed from " +
-          board.name +
-          ". The page may be blocked or its HTML changed."
+    let boardNotices;
+    try {
+      boardNotices = fetchBoardNotices_(board);
+    } catch (error) {
+      if (!board.optional) {
+        throw error;
+      }
+      console.warn(
+        "Skipping " + board.name + " for this run: " + (error && error.message ? error.message : error)
       );
+      return;
     }
     boardNotices.forEach(function (notice) {
       notices.push(notice);
@@ -211,7 +239,33 @@ function collectNotices_() {
   return notices;
 }
 
-function fetchText_(url) {
+function fetchBoardNotices_(board) {
+  const text =
+    board.parser === "sogang_api"
+      ? fetchText_(board.apiUrl, {
+          Accept: "application/json",
+          Referer: board.url,
+        })
+      : fetchText_(board.url);
+  const boardNotices = parseNoticeList_(board, text);
+  if (!boardNotices.length) {
+    throw new Error(
+      "No notices parsed from " +
+        board.name +
+        ". The page may be blocked or its HTML changed."
+    );
+  }
+  return boardNotices;
+}
+
+function fetchText_(url, extraHeaders) {
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (compatible; SogangNoticeBot/1.0; +https://github.com)",
+  };
+  Object.keys(extraHeaders || {}).forEach(function (key) {
+    headers[key] = extraHeaders[key];
+  });
   const maxRetries = 4;
   const baseDelayMs = 5000;
 
@@ -220,10 +274,7 @@ function fetchText_(url) {
       method: "get",
       followRedirects: true,
       muteHttpExceptions: true,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; SogangNoticeBot/1.0; +https://github.com)",
-      },
+      headers: headers,
     });
     const status = response.getResponseCode();
 
@@ -274,6 +325,9 @@ function fetchRetryAfterMs_(response, attempt, baseDelayMs) {
 function parseNoticeList_(board, html) {
   if (board.parser === "gnuboard") {
     return parseGnuboardNoticeList_(board, html);
+  }
+  if (board.parser === "sogang_api") {
+    return parseSogangApiNoticeList_(board, html);
   }
 
   const notices = [];
@@ -377,6 +431,67 @@ function parseGnuboardNoticeList_(board, html) {
   }
 
   return notices;
+}
+
+// www.sogang.ac.kr renders its boards in the browser from a JSON API:
+// { data: { list: [{ pkId, title, displayName, regDate, isTop, ... }], pages, total } }
+function parseSogangApiNoticeList_(board, text) {
+  const body = parseJsonOrNull_(text);
+  if (!body) {
+    throw new Error(
+      board.name + " API did not return JSON. Response: " + truncate_(text, 200)
+    );
+  }
+
+  const payload = body.data && typeof body.data === "object" ? body.data : body;
+  const items = Array.isArray(payload.list) ? payload.list : [];
+  const notices = [];
+  const seenIds = {};
+
+  items.forEach(function (item) {
+    if (!item || item.pkId === undefined || item.pkId === null) {
+      return;
+    }
+    const pkId = String(item.pkId);
+    if (seenIds[pkId]) {
+      return;
+    }
+    seenIds[pkId] = true;
+
+    notices.push({
+      id: board.id + ":" + pkId,
+      boardId: board.id,
+      boardName: board.name,
+      boardUrl: board.url,
+      title: cleanText_(stripTags_(item.title)),
+      url: board.detailUrlBase + encodeURIComponent(pkId) + "?bbsConfigFk=" + board.bbsConfigFk,
+      pkid: pkId,
+      postedAt: normalizeApiDate_(item.regDate),
+      writer: cleanText_(item.displayName) || null,
+      color: board.color,
+    });
+  });
+
+  return notices;
+}
+
+function normalizeApiDate_(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value === "number" || /^\d{12,}$/.test(String(value))) {
+    return Utilities.formatDate(new Date(Number(value)), TIME_ZONE, "yyyy.MM.dd");
+  }
+  const text = String(value);
+  const dashed = /(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/.exec(text);
+  if (dashed) {
+    return dashed[1] + "." + ("0" + dashed[2]).slice(-2) + "." + ("0" + dashed[3]).slice(-2);
+  }
+  const compact = /^(\d{4})(\d{2})(\d{2})/.exec(text);
+  if (compact) {
+    return compact[1] + "." + compact[2] + "." + compact[3];
+  }
+  return null;
 }
 
 function findGnuboardTitleAnchor_(html) {
