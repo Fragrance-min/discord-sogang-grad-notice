@@ -45,7 +45,9 @@ const BOARDS = [
     parser: "sogang_api",
     url: "https://www.sogang.ac.kr/ko/story/notification-general",
     apiUrl:
-      "https://www.sogang.ac.kr/api/v1/mainKo/BbsData/boardList" +
+      // The site's apiBase is ".../api/" and its paths start with "api/v1/",
+      // so the working path really is /api/api/v1/... (/api/v1/... returns 403).
+      "https://www.sogang.ac.kr/api/api/v1/mainKo/BbsData/boardList" +
       "?pageNum=1&pageSize=20&bbsConfigFk=1&category=&regDateFrom=01-01-2018" +
       "&title=&content=&username=",
     detailUrlBase: "https://www.sogang.ac.kr/ko/detail/",
@@ -479,17 +481,18 @@ function normalizeApiDate_(value) {
   if (value === undefined || value === null || value === "") {
     return null;
   }
-  if (typeof value === "number" || /^\d{12,}$/.test(String(value))) {
-    return Utilities.formatDate(new Date(Number(value)), TIME_ZONE, "yyyy.MM.dd");
+  if (typeof value === "number") {
+    return Utilities.formatDate(new Date(value), TIME_ZONE, "yyyy.MM.dd");
   }
-  const text = String(value);
+  const text = String(value).trim();
+  // The API sends regDate as "yyyyMMddHHmmss", e.g. "20261104155959".
+  const compact = /^(\d{4})(\d{2})(\d{2})(\d{6})?$/.exec(text);
+  if (compact) {
+    return compact[1] + "." + compact[2] + "." + compact[3];
+  }
   const dashed = /(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/.exec(text);
   if (dashed) {
     return dashed[1] + "." + ("0" + dashed[2]).slice(-2) + "." + ("0" + dashed[3]).slice(-2);
-  }
-  const compact = /^(\d{4})(\d{2})(\d{2})/.exec(text);
-  if (compact) {
-    return compact[1] + "." + compact[2] + "." + compact[3];
   }
   return null;
 }

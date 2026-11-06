@@ -6,7 +6,7 @@ GitHub Actions 스케줄은 꺼두고, 실제 알림 실행은 Google Apps Scrip
 
 ## 서강대 일반공지 게시판
 
-- https://www.sogang.ac.kr/ko/story/notification-general 은 페이지 HTML에 목록이 없고, 브라우저가 `https://www.sogang.ac.kr/api/v1/mainKo/BbsData/boardList?...&bbsConfigFk=1` API로 목록을 불러옵니다. 봇도 이 API를 직접 읽습니다.
+- https://www.sogang.ac.kr/ko/story/notification-general 은 페이지 HTML에 목록이 없고, 브라우저가 `https://www.sogang.ac.kr/api/api/v1/mainKo/BbsData/boardList?...&bbsConfigFk=1` API로 목록을 불러옵니다. 봇도 이 API를 직접 읽습니다. 주소에 `api`가 두 번 들어가는 것이 맞습니다. `/api/v1/...`로 부르면 403이 납니다.
 - 알림의 링크는 `https://www.sogang.ac.kr/ko/detail/{pkId}?bbsConfigFk=1` 형식입니다.
 - 이 게시판은 실패해도 건너뛰도록(`optional: true`) 되어 있어서, API가 막히거나 형식이 바뀌어도 나머지 게시판 알림은 계속 갑니다. 건너뛴 경우 실행 로그에 `Skipping 서강대 일반공지 ...` 경고가 남습니다.
 - 처음 추가된 뒤 첫 실행에서는 현재 일반공지 목록을 기준선으로 저장하고 알림을 보내지 않습니다. 기존 공지가 한꺼번에 쏟아지지 않습니다.
