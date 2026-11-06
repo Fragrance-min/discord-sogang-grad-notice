@@ -2,7 +2,15 @@
 
 GitHub Actions 스케줄은 꺼두고, 실제 알림 실행은 Google Apps Script 시간 기반 트리거로 돌리는 버전입니다.
 
-감시 대상은 대학원 공지사항 2개 게시판과 기계공학과 공지사항 게시판입니다.
+감시 대상은 대학원 공지사항 2개 게시판, 기계공학과 공지사항 게시판, 서강대 일반공지 게시판입니다.
+
+## 서강대 일반공지 게시판
+
+- https://www.sogang.ac.kr/ko/story/notification-general 은 페이지 HTML에 목록이 없고, 브라우저가 `https://www.sogang.ac.kr/api/api/v1/mainKo/BbsData/boardList?...&bbsConfigFk=1` API로 목록을 불러옵니다. 봇도 이 API를 직접 읽습니다. 주소에 `api`가 두 번 들어가는 것이 맞습니다. `/api/v1/...`로 부르면 403이 납니다.
+- 알림의 링크는 `https://www.sogang.ac.kr/ko/detail/{pkId}?bbsConfigFk=1` 형식입니다.
+- 이 게시판은 실패해도 건너뛰도록(`optional: true`) 되어 있어서, API가 막히거나 형식이 바뀌어도 나머지 게시판 알림은 계속 갑니다. 건너뛴 경우 실행 로그에 `Skipping 서강대 일반공지 ...` 경고가 남습니다.
+- 처음 추가된 뒤 첫 실행에서는 현재 일반공지 목록을 기준선으로 저장하고 알림을 보내지 않습니다. 기존 공지가 한꺼번에 쏟아지지 않습니다.
+- 설치 후 `verifySetup`을 한 번 실행해서 로그에 `서강대 일반공지: N notices`가 보이는지 확인하세요. `FAILED (skipped)`가 보이면 Apps Script에서 이 API에 접근하지 못하는 상태입니다.
 
 ## 업로드
 
